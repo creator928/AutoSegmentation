@@ -1,0 +1,11 @@
+# 기본 런타임 의존성 목록입니다.
+# torch/torchvision/torchaudio는 CPU/GPU 환경에 따라 설치 인덱스가 다르므로
+# 이 파일에는 고정하지 않고 install_dependency.bat에서 별도로 설치합니다.
+# ultralytics가 내부적으로 일부 패키지를 끌어오더라도, 실제 코드에서 직접 사용하는
+# 핵심 라이브러리는 명시적으로 적어 재현 가능성을 높입니다.
+PyQt6>=6.7,<7
+PyInstaller>=6.19,<7
+ultralytics>=8.3,<9
+opencv-python>=4.10,<5
+onnx>=1.17,<2
+onnxscript>=0.6,<1

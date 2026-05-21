@@ -1,0 +1,26 @@
+# Python cache
+__pycache__/
+*.py[cod]
+
+# Build outputs
+AutoSegmentation.exe
+Code/build/
+Code/dist/
+dist/
+build/
+
+# Model and runtime artifacts
+Data/ultralytics/
+Data/models/
+*.pt
+*.onnx
+
+# Workspace data
+Work/*
+
+# Runtime settings
+Data/settings.json
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
