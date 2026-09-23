@@ -13,17 +13,14 @@ if (Test-Path -LiteralPath $distDir) {
 python -m PyInstaller `
   --noconfirm `
   --clean `
-  --onefile `
-  --windowed `
-  --exclude-module qt_material `
-  --add-data "training_runner.py;." `
-  --add-data "auto_label_runner.py;." `
-  --add-data "validation_runner.py;." `
-  --name AutoSegmentation `
   --distpath $distDir `
   --workpath $workDir `
-  --specpath . `
-  main.py
+  (Join-Path $PSScriptRoot 'AutoSegmentation.spec')
+
+# DLL 포함 규칙이 있는 spec을 유지하고 빌드 실패 시 기존 실행 파일을 교체하지 않습니다.
+if ($LASTEXITCODE -ne 0) {
+    throw 'AutoSegmentation 빌드에 실패했습니다.'
+}
 
 # 기존 EXE를 먼저 삭제하지 않고 직접 덮어써 교체 실패 시 기존 실행 파일을 보존합니다.
 $copySucceeded = $false

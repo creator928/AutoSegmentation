@@ -89,6 +89,9 @@ class TrainingWorker(QObject):
             self.status_changed.emit("Temp 데이터셋 생성 완료")
             # 자식 Python 표준 입출력을 UTF-8로 유도하되, 부모 쪽에서는 추가 복구 디코딩도 수행합니다.
             process_env = build_clean_python_env()
+            process_env["YOLO_CONFIG_DIR"] = str(self.request.ultralytics_dir)
+            process_env["MPLCONFIGDIR"] = str(self.request.ultralytics_dir)
+            dataset_info.result_dir.mkdir(parents=True, exist_ok=True)
             with clean_windows_dll_search_path():
                 process = subprocess.Popen(
                     command,
@@ -96,6 +99,7 @@ class TrainingWorker(QObject):
                     stderr=subprocess.STDOUT,
                     text=False,
                     env=process_env,
+                    cwd=str(dataset_info.result_dir),
                     **hidden_subprocess_kwargs(),
                 )
 

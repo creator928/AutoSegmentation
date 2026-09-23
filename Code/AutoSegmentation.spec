@@ -1,10 +1,16 @@
 # -*- mode: python ; coding: utf-8 -*-
 
+import sys
+from pathlib import Path
+
+# Conda의 ctypes 의존 DLL을 포함하여 배포 EXE에서도 Windows 환경 점검이 동작하게 합니다.
+ffi_path = Path(sys.prefix) / 'Library' / 'bin' / 'ffi.dll'
+runtime_binaries = [(str(ffi_path), '.')] if ffi_path.exists() else []
 
 a = Analysis(
     ['main.py'],
     pathex=[],
-    binaries=[],
+    binaries=runtime_binaries,
     datas=[('training_runner.py', '.'), ('auto_label_runner.py', '.'), ('validation_runner.py', '.')],
     hiddenimports=[],
     hookspath=[],

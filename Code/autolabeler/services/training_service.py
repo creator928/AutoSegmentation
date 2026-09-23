@@ -8,9 +8,6 @@ import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
-from .worklog_service import load_worklog_statuses, work_status_for_image
-
-
 TRAIN_SPLIT_SEED = 42
 
 
@@ -68,13 +65,11 @@ def front_labeled_boundary_index(image_paths: list[Path]) -> int:
 
 
 def is_training_ready(work_dir: Path | None, image_paths: list[Path], dataset_size: int) -> bool:
-    """앞에서부터 N장의 이미지가 모두 수동 검토 완료되었는지 확인합니다."""
+    """AutoLabeler와 동일하게 앞 N장의 라벨 파일 유무로 학습 가능 여부를 판단합니다."""
     if work_dir is None or dataset_size <= 0 or len(image_paths) < dataset_size:
         return False
-    statuses = load_worklog_statuses(work_dir, image_paths)
     for image_path in training_target_images(image_paths, dataset_size):
-        if work_status_for_image(statuses, image_path) != "v":
-            return False
+        # 오토 라벨과 빈 라벨도 학습에 사용하며 수동 검토 상태는 별도로 보존합니다.
         if not image_path.with_suffix(".txt").exists():
             return False
     return True

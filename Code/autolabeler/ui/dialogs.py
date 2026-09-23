@@ -29,7 +29,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from ..constants import CLASS_COLORS
+from ..constants import CLASS_COLORS, MODEL_OPTIONS, SHORTCUT_LABELS
 from ..models import AppConfig, ModelOption
 from ..services.process_service import build_clean_python_env, clean_windows_dll_search_path, hidden_subprocess_kwargs
 
@@ -105,11 +105,22 @@ class SettingsDialog(QDialog):
     def __init__(self, config: AppConfig, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setWindowTitle("설정")
-        self.resize(520, 480)
+        self.resize(560, 560)
         self._config = config
 
         root_layout = QVBoxLayout(self)
         form_layout = QFormLayout()
+
+        # 자매 프로그램과 동일하게 설정에서 학습 시작 모델을 변경하고 저장합니다.
+        self.model_combo = QComboBox(self)
+        for option in MODEL_OPTIONS:
+            self.model_combo.addItem(f"{option.name} ({option.weight_name})", option.weight_name)
+        model_index = self.model_combo.findData(config.selected_model)
+        if model_index < 0:
+            self.model_combo.addItem(f"현재 설정값 ({config.selected_model})", config.selected_model)
+            model_index = self.model_combo.findData(config.selected_model)
+        self.model_combo.setCurrentIndex(max(0, model_index))
+        form_layout.addRow("YOLO Seg 모델", self.model_combo)
 
         self.theme_combo = QComboBox(self)
         self.theme_combo.addItem("라이트", "light")
@@ -148,7 +159,7 @@ class SettingsDialog(QDialog):
             row_widget = QWidget(self.shortcut_list)
             row_layout = QHBoxLayout(row_widget)
             row_layout.setContentsMargins(8, 4, 8, 4)
-            row_layout.addWidget(QLabel(action_name))
+            row_layout.addWidget(QLabel(SHORTCUT_LABELS.get(action_name, action_name)))
             editor = QKeySequenceEdit(QKeySequence(key_value), row_widget)
             self.shortcut_editors[action_name] = editor
             row_layout.addWidget(editor)
@@ -184,6 +195,7 @@ class SettingsDialog(QDialog):
 
     def apply_to_config(self) -> None:
         """설정창의 값을 설정 객체에 반영합니다."""
+        self._config.selected_model = str(self.model_combo.currentData())
         self._config.theme_mode = str(self.theme_combo.currentData())
         self._config.rectangle_input_mode = str(self.input_combo.currentData())
         self._config.runtime_options["polygon_point_count"] = str(self.polygon_point_spin.value())

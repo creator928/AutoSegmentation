@@ -41,6 +41,8 @@ def ensure_model_ready(config: AppConfig) -> bool:
         None,
         "YOLO Seg 모델 다운로드",
         f"{selected_model} 모델이 없습니다.\nData/models에 다운로드하시겠습니까?",
+        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        QMessageBox.StandardButton.Yes,
     )
     if confirmed != QMessageBox.StandardButton.Yes:
         return False

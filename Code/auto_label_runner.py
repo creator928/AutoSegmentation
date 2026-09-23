@@ -8,7 +8,13 @@ import logging
 import os
 from pathlib import Path
 
-from autolabeler.services.worklog_service import load_worklog_statuses, save_worklog_statuses
+import cv2
+import numpy as np
+
+from autolabeler.services.worklog_service import (
+    auto_label_allowed, commit_auto_label, read_explicit_statuses, worklog_lock,
+)
+from uuid import uuid4
 
 
 def parse_args() -> argparse.Namespace:
@@ -22,17 +28,51 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--ultralytics-dir", required=True)
     parser.add_argument("--stop-index-path", required=True)
     parser.add_argument("--worklog-path", required=True)
-    return parser.parse_args()
+    parser.add_argument("--max-polygon-points", type=int, default=24)
+    args = parser.parse_args()
+    if args.max_polygon_points < 3:
+        parser.error("--max-polygon-points must be at least 3")
+    return args
+
+
+def limit_polygon_points(polygon, max_points: int):
+    """닫힌 윤곽선을 근사하여 폴리곤별 최대 꼭짓점 수를 제한합니다."""
+    if max_points < 3:
+        raise ValueError("max_points must be at least 3")
+    if len(polygon) <= max_points:
+        return polygon
+    contour = np.asarray(polygon, dtype=np.float32).reshape(-1, 1, 2)
+    low, high = 0.0, cv2.arcLength(contour, True)
+    best = contour
+    # Douglas-Peucker 허용 오차를 탐색해 제한 이내에서 세부 윤곽을 최대한 남깁니다.
+    for _ in range(32):
+        epsilon = (low + high) / 2.0
+        candidate = cv2.approxPolyDP(contour, epsilon, True)
+        if len(candidate) > max_points:
+            low = epsilon
+        else:
+            high = epsilon
+            if len(candidate) >= 3:
+                best = candidate
+    points = best.reshape(-1, 2)
+    if len(points) > max_points:
+        # 대칭 윤곽 등에서 근사점 수가 4개에서 2개로 건너뛰어도 상한과 최소 3점을 보장합니다.
+        indices = np.linspace(0, len(points), max_points, endpoint=False, dtype=int)
+        points = points[indices]
+    return points
 
 
 def read_stop_index(stop_index_path: Path) -> int:
     """GUI가 기록한 현재 사용자 작업 경계 인덱스를 읽습니다."""
     if not stop_index_path.exists():
-        return -1
+        raise RuntimeError("정지 경계 파일이 없어 자동 처리를 중단합니다.")
     try:
-        return int(stop_index_path.read_text(encoding="utf-8").strip())
+        value = int(stop_index_path.read_text(encoding="utf-8").strip())
+        if value < -1:
+            raise ValueError("invalid stop index")
+        return value
     except (OSError, ValueError):
-        return -1
+        raise RuntimeError("정지 경계를 읽지 못해 자동 처리를 중단합니다.")
 
 
 def main() -> int:
@@ -56,10 +96,15 @@ def main() -> int:
         raise RuntimeError("오토 라벨 대상 이미지 목록이 비어 있습니다.")
 
     initial_stop_index = read_stop_index(stop_index_path)
-    total = max(0, len(image_paths) - max(initial_stop_index + 1, 0))
+    with worklog_lock(work_dir):
+        initial_statuses = read_explicit_statuses(work_dir)
+    total = sum(
+        initial_statuses.get(path.stem) in {"a", "n"}
+        for path in image_paths[max(initial_stop_index + 1, 0):]
+    )
     processed_count = 0
     labeled_count = 0
-    work_statuses = load_worklog_statuses(work_dir, image_paths)
+    backup_dir = work_dir / "auto_label_backups" / uuid4().hex
 
     for image_index in range(len(image_paths) - 1, -1, -1):
         current_stop_index = read_stop_index(stop_index_path)
@@ -71,6 +116,11 @@ def main() -> int:
             break
 
         image_path = image_paths[image_index]
+        if not auto_label_allowed(work_dir, image_path):
+            print(f"AUTO_LABELER_SKIP|{image_path.name}|protected", flush=True)
+            continue
+        label_path = image_path.with_suffix(".txt")
+        previous = label_path.read_bytes() if label_path.exists() else None
         results = model.predict(
             source=str(image_path),
             imgsz=args.imgsz,
@@ -90,6 +140,7 @@ def main() -> int:
                 class_list = boxes.cls.tolist()
                 polygon_list = masks.xyn
                 for class_value, polygon in zip(class_list, polygon_list):
+                    polygon = limit_polygon_points(polygon, args.max_polygon_points)
                     if len(polygon) < 3:
                         continue
                     point_tokens: list[str] = []
@@ -99,17 +150,16 @@ def main() -> int:
                         f"{int(class_value)} {' '.join(point_tokens)}"
                     )
 
-        label_path = image_path.with_suffix(".txt")
+        # 추론 중 바뀐 정지 경계와 검토 상태를 저장 직전에 다시 확인합니다.
+        current_stop_index = read_stop_index(stop_index_path)
+        if current_stop_index >= 0 and image_index <= current_stop_index:
+            break
+        if not commit_auto_label(work_dir, image_paths, image_path,
+                                 "\n".join(lines), backup_dir, previous):
+            print(f"AUTO_LABELER_SKIP|{image_path.name}|changed", flush=True)
+            continue
         if lines:
-            label_path.write_text("\n".join(lines), encoding="utf-8")
             labeled_count += 1
-        elif label_path.exists():
-            # 재추론 결과가 없으면 기존 자동 라벨도 제거해 현재 결과와 일치시킵니다.
-            label_path.unlink()
-
-        # 오토 라벨이 시도된 이미지는 결과 유무와 무관하게 자동 처리 상태로 기록합니다.
-        work_statuses[image_path] = "a"
-        work_statuses = save_worklog_statuses(work_dir, image_paths, work_statuses)
 
         processed_count += 1
         print(f"AUTO_LABELER_PROGRESS|{processed_count}|{max(total, processed_count)}", flush=True)

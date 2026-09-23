@@ -29,6 +29,7 @@ class AutoLabelRequest:
     runner_script_path: Path
     stop_index_path: Path
     worklog_path: Path
+    max_polygon_points: int = 24
 
 
 class AutoLabelWorker(QObject):
@@ -81,10 +82,14 @@ class AutoLabelWorker(QObject):
                 str(self.request.stop_index_path),
                 "--worklog-path",
                 str(self.request.worklog_path),
+                "--max-polygon-points",
+                str(self.request.max_polygon_points),
             ]
             self.status_changed.emit("오토 라벨 실행 준비 완료")
             # 자식 Python 출력 인코딩을 UTF-8로 고정해 한글 로그가 깨지지 않도록 합니다.
             process_env = build_clean_python_env()
+            process_env["YOLO_CONFIG_DIR"] = str(self.request.ultralytics_dir)
+            process_env["MPLCONFIGDIR"] = str(self.request.ultralytics_dir)
             with clean_windows_dll_search_path():
                 process = subprocess.Popen(
                     command,
@@ -92,6 +97,7 @@ class AutoLabelWorker(QObject):
                     stderr=subprocess.STDOUT,
                     text=False,
                     env=process_env,
+                    cwd=str(manifest_path.parent),
                     **hidden_subprocess_kwargs(),
                 )
 
